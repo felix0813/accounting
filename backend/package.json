@@ -4,8 +4,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply accounting-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply accounting-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply accounting --local",
+    "db:migrate:remote": "wrangler d1 migrations apply accounting --remote",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
