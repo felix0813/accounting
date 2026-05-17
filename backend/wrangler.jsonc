@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "accounting-backend",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-08-03",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "accounting-db",
+      "database_id": "replace-with-your-d1-database-id",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "replace-with-your-kv-namespace-id",
+      "preview_id": "replace-with-your-preview-kv-namespace-id"
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGIN": "http://localhost:5173"
+  }
+}
