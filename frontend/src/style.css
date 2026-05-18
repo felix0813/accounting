@@ -10,6 +10,8 @@ body { margin: 0; min-height: 100vh; background: linear-gradient(135deg, #f8fafc
 button, input, select { font: inherit; }
 button { border: 0; border-radius: 12px; padding: 0.8rem 1rem; background: #4f46e5; color: white; font-weight: 700; cursor: pointer; }
 button:hover { background: #4338ca; }
+button.secondary { background: #e0e7ff; color: #3730a3; }
+button.secondary:hover { background: #c7d2fe; }
 button.danger { background: #fee2e2; color: #b91c1c; }
 button.danger:hover { background: #fecaca; }
 input, select { width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 0.75rem 0.9rem; background: white; color: #172033; }
