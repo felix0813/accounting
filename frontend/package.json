@@ -2,9 +2,16 @@
   "name": "frontend",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev-server.mjs",
-    "build": "node scripts/build.mjs",
-    "preview": "node scripts/dev-server.mjs",
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
     "cf-typegen": "echo \"No Cloudflare Worker bindings are used by the static Vue frontend.\""
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "vite": "^6.4.2"
   }
 }
