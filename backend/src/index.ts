@@ -62,10 +62,44 @@ app.use('*', async (c, next) => {
 
 app.onError((error, c) => {
   console.error('Unhandled backend error', { message: error.message, stack: error.stack })
-  return c.json({ error: 'internal server error' }, 500)
+  return c.json({ error: 'internal server error', details: error.message }, 500)
 })
 
-app.get('/health', (c) => c.json({ ok: true, service: 'accounting-backend' }))
+app.get('/health', async (c) => {
+  const checks = {
+    db: { ok: false, error: null as string | null },
+    cache: { ok: false, error: null as string | null },
+  }
+
+  try {
+    await c.env.DB.prepare('SELECT 1 as ok').first()
+    checks.db.ok = true
+    console.log('Health check: DB connected')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown db error'
+    checks.db.error = message
+    console.error('Health check: DB failed', { error: message })
+  }
+
+  try {
+    const key = 'health:cache:probe'
+    await c.env.CACHE.put(key, JSON.stringify({ checkedAt: Date.now() }), { expirationTtl: 60 })
+    await c.env.CACHE.get(key, 'json')
+    checks.cache.ok = true
+    console.log('Health check: CACHE connected')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown cache error'
+    checks.cache.error = message
+    console.error('Health check: CACHE failed', { error: message })
+  }
+
+  const ok = checks.db.ok && checks.cache.ok
+  const status = ok ? 200 : 503
+  if (!ok) {
+    console.error('Health check failed', checks)
+  }
+  return c.json({ ok, service: 'accounting-backend', checks }, status)
+})
 
 app.get('/api/categories', async (c) => {
   const cached = await c.env.CACHE.get<string[]>(CATEGORY_CACHE_KEY, 'json')
@@ -83,7 +117,7 @@ app.put('/api/categories', async (c) => {
   const body = await c.req.json<{ categories?: unknown }>()
   if (!Array.isArray(body.categories)) {
     console.error('Invalid categories payload', { payloadType: typeof body.categories })
-    return c.json({ error: 'categories must be an array' }, 400)
+    return c.json({ error: 'categories must be an array', details: 'payload.categories is not an array' }, 400)
   }
 
   const categories = body.categories
@@ -92,7 +126,7 @@ app.put('/api/categories', async (c) => {
 
   if (categories.length === 0) {
     console.error('Rejected empty categories update')
-    return c.json({ error: 'at least one category is required' }, 400)
+    return c.json({ error: 'at least one category is required', details: 'categories became empty after trimming and deduplication' }, 400)
   }
 
   await c.env.CACHE.put(CATEGORY_CACHE_KEY, JSON.stringify(categories))
@@ -137,10 +171,15 @@ app.post('/api/expenses', async (c) => {
   const validation = validateExpense(input)
   if (validation.error) {
     console.error('Expense creation validation failed', { error: validation.error })
-    return c.json({ error: validation.error }, 400)
+    return c.json({ error: validation.error, details: validation.error }, 400)
   }
 
   const now = new Date().toISOString()
+  if (!validation.value) {
+    console.error('Expense validation produced no value unexpectedly')
+    return c.json({ error: 'invalid expense payload', details: 'validation returned empty value' }, 400)
+  }
+
   const { amount, category, note, spentAt } = validation.value
   const result = await c.env.DB.prepare(
     'INSERT INTO expenses (amount, category, note, spent_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, amount, category, note, spent_at, created_at, updated_at',
@@ -150,7 +189,7 @@ app.post('/api/expenses', async (c) => {
 
   if (!result) {
     console.error('D1 insert returned no row')
-    return c.json({ error: 'failed to create expense' }, 500)
+    return c.json({ error: 'failed to create expense', details: 'database insert returned no row' }, 500)
   }
 
   await clearStatsCache(c.env.CACHE)
@@ -162,17 +201,22 @@ app.put('/api/expenses/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id) || id <= 0) {
     console.error('Invalid expense id for update', { id: c.req.param('id') })
-    return c.json({ error: 'invalid expense id' }, 400)
+    return c.json({ error: 'invalid expense id', details: 'id must be a positive integer' }, 400)
   }
 
   const input = await c.req.json<ExpenseInput>()
   const validation = validateExpense(input)
   if (validation.error) {
     console.error('Expense update validation failed', { id, error: validation.error })
-    return c.json({ error: validation.error }, 400)
+    return c.json({ error: validation.error, details: validation.error }, 400)
   }
 
   const now = new Date().toISOString()
+  if (!validation.value) {
+    console.error('Expense update validation produced no value unexpectedly', { id })
+    return c.json({ error: 'invalid expense payload', details: 'validation returned empty value' }, 400)
+  }
+
   const { amount, category, note, spentAt } = validation.value
   const result = await c.env.DB.prepare(
     'UPDATE expenses SET amount = ?, category = ?, note = ?, spent_at = ?, updated_at = ? WHERE id = ? RETURNING id, amount, category, note, spent_at, created_at, updated_at',
@@ -182,7 +226,7 @@ app.put('/api/expenses/:id', async (c) => {
 
   if (!result) {
     console.error('Expense not found for update', { id })
-    return c.json({ error: 'expense not found' }, 404)
+    return c.json({ error: 'expense not found', details: 'no record matched the given id' }, 404)
   }
 
   await clearStatsCache(c.env.CACHE)
@@ -194,13 +238,13 @@ app.delete('/api/expenses/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id) || id <= 0) {
     console.error('Invalid expense id for delete', { id: c.req.param('id') })
-    return c.json({ error: 'invalid expense id' }, 400)
+    return c.json({ error: 'invalid expense id', details: 'id must be a positive integer' }, 400)
   }
 
   const result = await c.env.DB.prepare('DELETE FROM expenses WHERE id = ?').bind(id).run()
   if (!result.meta.changes) {
     console.error('Expense not found for delete', { id })
-    return c.json({ error: 'expense not found' }, 404)
+    return c.json({ error: 'expense not found', details: 'no record matched the given id' }, 404)
   }
 
   await clearStatsCache(c.env.CACHE)
